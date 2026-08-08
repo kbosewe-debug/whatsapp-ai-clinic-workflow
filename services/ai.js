@@ -1,42 +1,133 @@
-const OpenAI = require("openai");
-const { supabase } = require("../config/supabase");
+const { GoogleGenAI } = require("@google/genai");
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+if (!process.env.GEMINI_API_KEY) {
+  throw new Error("GEMINI_API_KEY is required");
+}
 
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+});
+
+/*
+ * Gets clinic information from Supabase.
+ */
 async function context(clinicId) {
-  const [clinic, doctors, faqs] = await Promise.all([
+  const { supabase } = require("../config/supabase");
+
+  const [clinicResult, doctorsResult, faqsResult] = await Promise.all([
     supabase.from("clinics").select("*").eq("id", clinicId).single(),
-    supabase.from("doctors").select("id,name,specialty,active").eq("clinic_id", clinicId).eq("active", true),
-    supabase.from("faqs").select("question,answer").eq("clinic_id", clinicId).eq("active", true)
+
+    supabase.from("doctors").select("*").eq("clinic_id", clinicId),
+
+    supabase.from("faqs").select("*").eq("clinic_id", clinicId),
   ]);
-  if (clinic.error) throw clinic.error;
-  if (doctors.error) throw doctors.error;
-  if (faqs.error) throw faqs.error;
-  return { clinic: clinic.data, doctors: doctors.data || [], faqs: faqs.data || [] };
+
+  if (clinicResult.error) {
+    console.error("Clinic context error:", clinicResult.error);
+  }
+
+  if (doctorsResult.error) {
+    console.error("Doctors context error:", doctorsResult.error);
+  }
+
+  if (faqsResult.error) {
+    console.error("FAQ context error:", faqsResult.error);
+  }
+
+  return {
+    clinic: clinicResult.data || null,
+    doctors: doctorsResult.data || [],
+    faqs: faqsResult.data || [],
+  };
 }
 
-async function reply(message, ctx) {
-  const instructions = `
-You are a WhatsApp assistant for a clinic.
-Answer FAQs, opening hours, location, doctors and general appointment questions.
-Never invent availability or claim an appointment was booked unless the server confirms it.
-Never diagnose medical conditions.
-If the user wants a human, output exactly HUMAN_SUPPORT.
-If the user wants to book, output exactly BOOK_APPOINTMENT.
-If the user wants to reschedule, output exactly RESCHEDULE_APPOINTMENT.
-If the user wants to cancel, output exactly CANCEL_APPOINTMENT.
-Keep replies concise and friendly.
+/*
+ * Sends the patient's message to Gemini.
+ */
+async function reply(message, clinicContext) {
+  const clinic = clinicContext?.clinic;
+  const doctors = clinicContext?.doctors || [];
+  const faqs = clinicContext?.faqs || [];
 
-Clinic: ${JSON.stringify(ctx.clinic)}
-Doctors: ${JSON.stringify(ctx.doctors)}
-FAQs: ${JSON.stringify(ctx.faqs)}
+  const clinicInformation = JSON.stringify(
+    {
+      clinic,
+      doctors,
+      faqs,
+    },
+    null,
+    2,
+  );
+
+  const systemInstruction = `
+You are ClinicFlow AI, an AI assistant for a hospital or clinic on WhatsApp.
+
+Your responsibilities:
+
+- Answer clinic FAQs
+- Provide clinic location
+- Provide opening hours
+- Explain available services
+- Help patients book appointments
+- Help patients reschedule appointments
+- Help patients cancel appointments
+- Help patients find doctors
+- Help patients request human support
+
+IMPORTANT RULES:
+
+1. Never invent doctor availability.
+2. Never invent appointment times.
+3. Never claim an appointment has been booked unless the database confirms it.
+4. Never claim an appointment was cancelled unless the database confirms it.
+5. Never claim an appointment was rescheduled unless the database confirms it.
+6. Be concise because this is WhatsApp.
+7. Ask the patient for missing information when necessary.
+8. If the patient wants human support, return exactly:
+
+HUMAN_SUPPORT
+
+9. If the patient wants to book an appointment, return exactly:
+
+BOOK_APPOINTMENT
+
+10. If the patient wants to reschedule an appointment, return exactly:
+
+RESCHEDULE_APPOINTMENT
+
+11. If the patient wants to cancel an appointment, return exactly:
+
+CANCEL_APPOINTMENT
+
+CLINIC INFORMATION:
+
+${clinicInformation}
 `;
-  const r = await client.responses.create({
-    model: process.env.OPENAI_MODEL || "gpt-5.6",
-    instructions,
-    input: message
-  });
-  return r.output_text.trim();
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        model: process.env.GEMINI_MODEL,
+        contents: message,
+        config: {
+          systemInstruction,
+        },
+      });
+
+      return response.text.trim();
+    } catch (error) {
+      console.error(`Gemini attempt ${attempt} failed:`, error.message);
+
+      if (error.status !== 503 || attempt === 3) {
+        throw error;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+    }
+  }
 }
 
-module.exports = { context, reply };
+module.exports = {
+  context,
+  reply,
+};
