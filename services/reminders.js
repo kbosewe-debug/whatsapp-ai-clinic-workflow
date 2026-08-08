@@ -1,125 +1,45 @@
-const { DateTime } = require("luxon");
+const cron = require("node-cron");
+const { supabase } = require("../config/supabase");
+const { sendTemplate } = require("./whatsapp");
 
-const Appointment = require("../models/Appointment");
-const Clinic = require("../models/Clinic");
-const Doctor = require("../models/Doctor");
-const {
-  sendTemplateMessage,
-  sendTextMessage,
-} = require("./whatsapp");
-
-function formatAppointmentDate(date, timezone) {
-  return DateTime.fromJSDate(new Date(date), {
-    zone: timezone,
-  }).toFormat("cccc, dd LLL yyyy");
-}
-
-function formatAppointmentTime(date, timezone) {
-  return DateTime.fromJSDate(new Date(date), {
-    zone: timezone,
-  }).toFormat("hh:mm a");
-}
-
-async function sendReminder(appointment, clinic, doctor) {
-  const timezone =
-    clinic.timezone ||
-    process.env.GOOGLE_TIMEZONE ||
-    "Africa/Nairobi";
-
-  const templateName = process.env.WHATSAPP_REMINDER_TEMPLATE_NAME;
-  const languageCode =
-    process.env.WHATSAPP_REMINDER_TEMPLATE_LANGUAGE || "en_US";
-
-  const parameters = [
-    appointment.patientName,
-    doctor.name,
-    formatAppointmentDate(appointment.startTime, timezone),
-    formatAppointmentTime(appointment.startTime, timezone),
+async function runReminders() {
+  const now = Date.now();
+  const windows = [
+    { flag: "reminder_24h_sent", min: 23, max: 25 },
+    { flag: "reminder_2h_sent", min: 1.5, max: 2.5 }
   ];
 
-  if (templateName) {
-    return sendTemplateMessage({
-      to: appointment.patientPhone,
-      templateName,
-      languageCode,
-      parameters,
-    });
-  }
+  for (const w of windows) {
+    const r = await supabase.from("appointments").select(
+      `id,starts_at,${w.flag},patients(name,phone),doctors(name)`
+    ).eq("status", "booked").eq(w.flag, false)
+      .gte("starts_at", new Date(now + w.min * 3600000).toISOString())
+      .lte("starts_at", new Date(now + w.max * 3600000).toISOString());
 
-  // Development fallback. For production reminders outside the
-  // customer-service window, use an approved WhatsApp template.
-  return sendTextMessage(
-    appointment.patientPhone,
-    `Reminder: you have an appointment with ${doctor.name} on ${parameters[2]} at ${parameters[3]}. Booking reference: ${appointment.bookingCode}.`
-  );
-}
+    if (r.error) { console.error("Reminder query:", r.error.message); continue; }
 
-async function runReminderJob() {
-  const now = DateTime.now().toUTC();
-
-  const reminderWindows = [
-    {
-      name: "24h",
-      minHours: 23.92,
-      maxHours: 24.08,
-      field: "reminder24Sent",
-    },
-    {
-      name: "2h",
-      minHours: 1.92,
-      maxHours: 2.08,
-      field: "reminder2Sent",
-    },
-  ];
-
-  for (const window of reminderWindows) {
-    const min = now.plus({ hours: window.minHours }).toJSDate();
-    const max = now.plus({ hours: window.maxHours }).toJSDate();
-
-    const appointments = await Appointment.find({
-      status: { $in: ["booked", "rescheduled"] },
-      startTime: {
-        $gte: min,
-        $lte: max,
-      },
-      [window.field]: false,
-    }).lean();
-
-    for (const appointment of appointments) {
+    for (const a of r.data || []) {
       try {
-        const [clinic, doctor] = await Promise.all([
-          Clinic.findById(appointment.clinicId).lean(),
-          Doctor.findById(appointment.doctorId).lean(),
-        ]);
-
-        if (!clinic || !doctor) {
-          continue;
-        }
-
-        await sendReminder(appointment, clinic, doctor);
-
-        await Appointment.updateOne(
-          { _id: appointment._id },
-          {
-            $set: {
-              [window.field]: true,
-            },
-          }
+        const dt = new Date(a.starts_at);
+        await sendTemplate(
+          a.patients.phone,
+          process.env.WHATSAPP_REMINDER_TEMPLATE_NAME,
+          process.env.WHATSAPP_REMINDER_TEMPLATE_LANGUAGE || "en_US",
+          [a.patients.name || "Patient", a.doctors.name,
+           dt.toLocaleDateString("en-KE"),
+           dt.toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit" })]
         );
-
-        console.log(
-          `Sent ${window.name} reminder for ${appointment.bookingCode}.`
-        );
-      } catch (error) {
-        console.error(
-          `Failed ${window.name} reminder for ${appointment.bookingCode}:`,
-          error.response?.data || error.message
-        );
-      }
+        await supabase.from("appointments")
+          .update({ [w.flag]: true, updated_at: new Date().toISOString() })
+          .eq("id", a.id);
+      } catch (e) { console.error(`Reminder ${a.id}:`, e.message); }
     }
   }
 }
 
-module.exports = {
-  runReminderJob,
-};
+function startReminders() {
+  cron.schedule("* * * * *", runReminders);
+  console.log("Reminder scheduler started.");
+}
+
+module.exports = { startReminders, runReminders };
