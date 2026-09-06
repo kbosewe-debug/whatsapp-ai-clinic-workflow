@@ -1,4 +1,5 @@
 const router = require("express").Router();
+<<<<<<< HEAD
 
 const { supabase } = require("../config/supabase");
 const appointments = require("../services/appointments");
@@ -38,10 +39,26 @@ router.get("/", async (req, res) => {
       error: error.message,
     });
   }
+=======
+const { supabase } = require("../config/supabase");
+const a = require("../services/appointments");
+
+router.get("/", async (req, res) => {
+  try {
+    let q = supabase.from("appointments").select(
+      "*,patients(name,phone),doctors(name,specialty)"
+    ).order("starts_at", { ascending: true });
+    if (req.query.clinicId) q = q.eq("clinic_id", req.query.clinicId);
+    const r = await q;
+    if (r.error) throw r.error;
+    res.json({ appointments: r.data || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+>>>>>>> bdc32ff64f0b65326607727bb04f664f1f478cac
 });
 
 router.post("/", async (req, res) => {
   try {
+<<<<<<< HEAD
     const appointment = await appointments.createAppointment(req.body);
 
     res.status(201).json({
@@ -68,10 +85,20 @@ router.patch("/:id/cancel", async (req, res) => {
       error: error.message,
     });
   }
+=======
+    res.status(201).json({ appointment: await a.createAppointment(req.body) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.patch("/:id/cancel", async (req, res) => {
+  try { res.json({ appointment: await a.cancelAppointment(req.params.id) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+>>>>>>> bdc32ff64f0b65326607727bb04f664f1f478cac
 });
 
 router.patch("/:id/reschedule", async (req, res) => {
   try {
+<<<<<<< HEAD
     const appointment = await appointments.rescheduleAppointment({
       appointmentId: req.params.id,
       startsAt: req.body.startsAt,
@@ -86,6 +113,14 @@ router.patch("/:id/reschedule", async (req, res) => {
       error: error.message,
     });
   }
+=======
+    res.json({ appointment: await a.rescheduleAppointment({
+      appointmentId: req.params.id,
+      startsAt: req.body.startsAt,
+      endsAt: req.body.endsAt
+    })});
+  } catch (e) { res.status(400).json({ error: e.message }); }
+>>>>>>> bdc32ff64f0b65326607727bb04f664f1f478cac
 });
 
 module.exports = router;
