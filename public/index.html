@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ClinicFlow Hospital Dashboard</title><link rel="stylesheet" href="/dashboard.css"></head>
+<body>
+<aside class="sidebar"><div class="brand"><b>+</b><strong>ClinicFlow<small>Hospital AI</small></strong></div>
+<nav>
+<button data-view="overview" class="active">⌂ Overview</button><button data-view="appointments">▣ Appointments</button>
+<button data-view="doctors">♙ Doctors</button><button data-view="patients">♙ Patients</button>
+<button data-view="whatsapp">◌ WhatsApp</button><button data-view="support">! Support</button><button data-view="settings">⚙ Settings</button>
+</nav><footer>● API connected</footer></aside>
+<main><header><div><button id="mobile">☰</button><h1 id="title">Overview</h1><p id="subtitle">Monitor your clinic and AI assistant.</p></div><button id="refresh">↻ Refresh</button></header>
+<section id="overview" class="view active"><div class="stats">
+<div><span>Today's appointments</span><strong id="today">—</strong></div><div><span>Upcoming</span><strong id="upcoming">—</strong></div><div><span>Doctors</span><strong id="doctorCount">—</strong></div><div><span>Open support</span><strong id="supportCount">—</strong></div></div>
+<div class="cols"><article class="card"><h2>Upcoming appointments</h2><div id="overviewAppointments"></div></article><article class="card"><h2>Support requests</h2><div id="overviewSupport"></div></article></div></section>
+<section id="appointments" class="view"><div class="toolbar"><input id="appointmentSearch" placeholder="Search appointments..."><button class="primary">＋ New appointment</button></div><article class="card" id="appointmentsTable"></article></section>
+<section id="doctors" class="view"><div class="toolbar"><input id="doctorSearch" placeholder="Search doctors..."><button class="primary">＋ Add doctor</button></div><article class="card" id="doctorsGrid"></article></section>
+<section id="patients" class="view"><div class="toolbar"><input id="patientSearch" placeholder="Search patients..."></div><article class="card" id="patientsTable"></article></section>
+<section id="whatsapp" class="view"><div class="chat-layout"><article class="card"><h2>WhatsApp conversations</h2><div id="conversations"></div></article><article class="card chat"><h2 id="chatTitle">Conversation</h2><div id="messages" class="messages">Select a conversation.</div><div class="compose"><input id="reply" placeholder="Manual reply"><button class="primary" id="send">Send</button></div></article></div></section>
+<section id="support" class="view"><article class="card"><h2>Support tickets</h2><div id="supportTable"></div></article></section>
+<section id="settings" class="view"><article class="card form"><h2>Clinic settings</h2><form id="clinicForm"><label>Name<input id="name" required></label><label>Phone<input id="phone"></label><label>Address<input id="address"></label><label>Website<input id="website"></label><label>Opening hours<textarea id="hours"></textarea></label><label>Services<textarea id="services"></textarea></label><button class="primary">Save settings</button></form></article></section>
+</main><div id="toast"></div><script src="/dashboard.js"></script></body></html>
